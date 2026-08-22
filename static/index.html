@@ -1725,12 +1725,11 @@
                 <label className="text-xs font-bold text-slate-700">Estimated Total Budget (₹ INR)</label>
                 <input 
                   type="number" 
-                  required
                   min="0"
-                  placeholder="0"
+                  placeholder="Enter amount"
                   value={budget} 
                   onChange={e => setBudget(e.target.value)}
-                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-odoo-purple"
                 />
               </div>
 
@@ -1890,10 +1889,11 @@
                 <label className="text-xs font-bold text-slate-700">Allocated Stop Budget (₹ INR)</label>
                 <input 
                   type="number" 
-                  required
+                  min="0"
+                  placeholder="Enter amount"
                   value={budget} 
                   onChange={e => setBudget(e.target.value)}
-                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-odoo-purple"
                 />
               </div>
 
@@ -2441,10 +2441,10 @@
                     type="number" 
                     required
                     min="0"
-                    placeholder="0"
+                    placeholder="Enter amount"
                     value={amount} 
                     onChange={e => setAmount(e.target.value)}
-                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-odoo-purple"
                   />
                 </div>
                 <div>
