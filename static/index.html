@@ -1162,12 +1162,6 @@
                 >
                   <i data-lucide="share-2" className="w-4 h-4"></i> Share Itinerary
                 </button>
-                <button 
-                  onClick={onAddExpenseClick}
-                  className="bg-odoo-purple hover:bg-odoo-darkPurple text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
-                >
-                  <i data-lucide="plus" className="w-4 h-4"></i> Log Expense
-                </button>
               </div>
             </div>
 
@@ -1193,36 +1187,9 @@
             </div>
           </div>
 
-          {/* TAB 1: ITINERARY & OPTIMIZER */}
+          {/* TAB 1: ITINERARY & EXPENSES */}
           {activeTab === 'itinerary' && (
             <div className="space-y-6">
-              {/* Optimization Savings Banner if applied */}
-              {optimizationResult && (
-                <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-3xl p-6 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center">
-                      <i data-lucide="sparkles" className="w-6 h-6"></i>
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-lg">Smart Route Optimized!</h4>
-                      <p className="text-xs text-emerald-100">
-                        Attractions sequenced to eliminate crisscrossing and minimize travel time.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl text-center">
-                      <span className="text-[10px] uppercase font-semibold text-emerald-200">Distance Saved</span>
-                      <p className="text-lg font-black">-{optimizationResult.distance_saved_km} km</p>
-                    </div>
-                    <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl text-center">
-                      <span className="text-[10px] uppercase font-semibold text-emerald-200">Time Saved</span>
-                      <p className="text-lg font-black">-{optimizationResult.time_saved_minutes} mins</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Itinerary Stops and Days */}
               {trip.stops.length === 0 ? (
                 <div className="bg-white rounded-3xl border-2 border-dashed border-purple-200 p-12 text-center space-y-4 shadow-sm">
@@ -1260,16 +1227,16 @@
 
                         <div className="flex items-center gap-2">
                           <button 
-                            onClick={() => onOptimizeDay(stop.id, 1)}
-                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
-                            title="Run Traveling Salesperson Problem (TSP) algorithm to sequence activities"
+                            onClick={onAddExpenseClick}
+                            className="bg-odoo-teal hover:bg-odoo-darkTeal text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer"
+                            title="Log Multi-Currency Expense & Split"
                           >
-                            <i data-lucide="sparkles" className="w-3.5 h-3.5"></i> Smart Optimize Day
+                            <i data-lucide="plus-circle" className="w-3.5 h-3.5"></i> + Log Expense
                           </button>
 
                           <button 
                             onClick={() => onAddActivityClick(stop)}
-                            className="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                            className="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                           >
                             <i data-lucide="plus" className="w-3.5 h-3.5"></i> + Activity
                           </button>
