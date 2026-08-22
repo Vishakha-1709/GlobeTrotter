@@ -444,6 +444,12 @@
             <AddExpenseModal 
               trip={tripData}
               initialExpense={editingExpense}
+              onNavigateToMembers={() => {
+                setShowAddExpenseModal(false);
+                setEditingExpense(null);
+                setActiveTripTab('budget');
+                showToast("Switched to Budget & GlobeSplit! Add travelers in the group section.");
+              }}
               onClose={() => {
                 setShowAddExpenseModal(false);
                 setEditingExpense(null);
@@ -2299,7 +2305,7 @@
       );
     }
 
-    function AddExpenseModal({ trip, initialExpense, onClose, onAdded }) {
+    function AddExpenseModal({ trip, initialExpense, onNavigateToMembers, onClose, onAdded }) {
       const isEditing = !!initialExpense;
       const [desc, setDesc] = useState(initialExpense ? initialExpense.description : "");
       const [category, setCategory] = useState(initialExpense ? initialExpense.category : "Meals");
@@ -2372,7 +2378,7 @@
               <button 
                 type="button" 
                 onClick={onClose} 
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center font-bold text-sm transition-all"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center font-bold text-sm transition-all cursor-pointer"
                 title="Close"
               >
                 ✕
@@ -2450,13 +2456,28 @@
 
               {/* Group Members Split Selector */}
               <div className="space-y-2 pt-1">
-                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-                  <span>Split Among Travelers ({selectedSplitMembers.length})</span>
-                  <span className="text-odoo-teal text-[11px]">
-                    ₹{(amount / (selectedSplitMembers.length || 1)).toFixed(2)} each
-                  </span>
-                </label>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">
+                    Split Among Travelers ({selectedSplitMembers.length})
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-odoo-teal text-[11px] font-bold">
+                      ₹{(amount / (selectedSplitMembers.length || 1)).toFixed(2)} each
+                    </span>
+                    {onNavigateToMembers && (
+                      <button
+                        type="button"
+                        onClick={onNavigateToMembers}
+                        className="text-[11px] font-bold text-odoo-purple hover:underline bg-purple-50 hover:bg-purple-100 px-2 py-0.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                        title="Add more travelers in Budget & GlobeSplit"
+                      >
+                        <span>+ Add Member</span> ➔
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 items-center">
                   {memberNames.map(name => {
                     const isChecked = selectedSplitMembers.includes(name);
                     return (
@@ -2464,7 +2485,7 @@
                         key={name}
                         type="button"
                         onClick={() => toggleMemberSplit(name)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                           isChecked 
                             ? 'bg-purple-100 text-odoo-purple border border-purple-200 shadow-sm' 
                             : 'bg-slate-100 text-slate-400 border border-transparent'
@@ -2474,6 +2495,16 @@
                       </button>
                     );
                   })}
+
+                  {onNavigateToMembers && (
+                    <button
+                      type="button"
+                      onClick={onNavigateToMembers}
+                      className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-odoo-purple hover:bg-purple-50 border border-dashed border-purple-300 transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      + Add Co-traveler
+                    </button>
+                  )}
                 </div>
               </div>
 
