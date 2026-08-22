@@ -190,15 +190,17 @@
         setLoading(true);
         try {
           const res = await fetch(`${API_BASE}/stops/${stopId}/optimize-day/${dayNumber}`, { method: 'POST' });
+          const result = await res.json();
           if (res.ok) {
-            const result = await res.json();
             setOptimizationResult(result);
-            showToast(`✨ Optimized Day ${dayNumber}! Saved ${result.distance_saved_km} km & ${result.time_saved_minutes} mins transit!`, 'success');
+            showToast(`✨ Smart Optimized Day ${dayNumber}! Saved ${result.distance_saved_km} km & ${result.time_saved_minutes} mins transit!`, 'success');
             // Reload updated trip items
             loadTripDetail(selectedTripId);
+          } else {
+            showToast(result.detail || "Please add at least 2 activities first to run Smart Route Optimization!", "error");
           }
         } catch (e) {
-          showToast("Optimization failed", "error");
+          showToast("Please add at least 2 activities first to optimize route!", "error");
         } finally {
           setLoading(false);
         }
