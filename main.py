@@ -79,9 +79,12 @@ def signup(user_in: schemas.UserRegister, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/login", response_model=schemas.Token)
 def login(creds: schemas.UserLogin, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == creds.email).first()
-    if not user or not verify_password(creds.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    email_clean = creds.email.strip().lower()
+    user = db.query(models.User).filter(models.User.email.ilike(email_clean)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="No account found with this email. Please sign up first!")
+    if not verify_password(creds.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect password. Please check your password or try again.")
 
     token = create_access_token({"sub": user.email})
     return {"access_token": token, "token_type": "bearer", "user": user}

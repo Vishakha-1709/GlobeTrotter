@@ -567,9 +567,23 @@
 
             {/* Error Message */}
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
-                <i data-lucide="alert-circle" className="w-4 h-4 shrink-0"></i>
-                <span>{error}</span>
+              <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center justify-between gap-2 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <i data-lucide="alert-circle" className="w-4 h-4 shrink-0 text-rose-600"></i>
+                  <span>{error}</span>
+                </div>
+                {isLogin && error.includes("sign up") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsLogin(false);
+                      setError(null);
+                    }}
+                    className="text-[11px] font-bold text-odoo-purple underline hover:text-odoo-darkPurple shrink-0 cursor-pointer ml-1"
+                  >
+                    Sign Up Now →
+                  </button>
+                )}
               </div>
             )}
 
