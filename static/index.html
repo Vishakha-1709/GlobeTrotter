@@ -1382,14 +1382,14 @@
                 </div>
               </div>
 
-              {/* GlobeSplit Debt Settlement Matrix */}
+              {/* GlobeSplit Member Net Standing */}
               {globeSplitReport && (
                 <div className="bg-gradient-to-r from-slate-900 via-odoo-darkPurple to-slate-900 rounded-3xl p-8 text-white shadow-xl space-y-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                      <h3 className="text-2xl font-extrabold">Group Debt Settlement Matrix</h3>
+                      <h3 className="text-2xl font-extrabold">Group Expense Net Standing</h3>
                       <p className="text-xs text-slate-300 mt-1">
-                        Min-Cash-Flow graph algorithm calculates the exact minimum transactions to settle all member debts.
+                        Real-time balance breakdown showing what each traveler paid, consumed, and owes or gets back.
                       </p>
                     </div>
 
@@ -1401,38 +1401,18 @@
                     </button>
                   </div>
 
-                  {/* Net Balances and Simplified Transactions */}
-                  <div className="grid md:grid-cols-2 gap-6 pt-2">
-                    {/* Member Balances */}
-                    <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10 space-y-3">
-                      <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider">Member Net Standing</h4>
-                      <div className="space-y-2">
-                        {Object.entries(globeSplitReport.member_balances).map(([name, bal]) => (
-                          <div key={name} className="flex items-center justify-between text-sm py-1.5 border-b border-white/5">
-                            <span className="font-medium text-slate-200">{name}</span>
-                            <span className={`font-bold ${bal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {bal >= 0 ? `+ ₹${bal.toFixed(2)} (Gets back)` : `- ₹${Math.abs(bal).toFixed(2)} (Owes)`}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Settlement Actions */}
-                    <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10 space-y-3">
-                      <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider">Settlement Plan (Min Transactions)</h4>
-                      <div className="space-y-2.5">
-                        {globeSplitReport.settlement_transactions.map((tx, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-sm bg-black/30 px-3.5 py-2.5 rounded-xl border border-white/10">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-rose-300">{tx.from_user}</span>
-                              <i data-lucide="arrow-right" className="w-4 h-4 text-slate-400"></i>
-                              <span className="font-bold text-emerald-300">{tx.to_user}</span>
-                            </div>
-                            <span className="font-extrabold text-odoo-amber text-base">₹{tx.amount.toFixed(2)}</span>
-                          </div>
-                        ))}
-                      </div>
+                  {/* Member Balances Full Width Card */}
+                  <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/10 space-y-3">
+                    <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider">Member Net Standing</h4>
+                    <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
+                      {Object.entries(globeSplitReport.member_balances).map(([name, bal]) => (
+                        <div key={name} className="flex items-center justify-between text-sm p-3.5 bg-white/5 rounded-xl border border-white/10">
+                          <span className="font-semibold text-slate-100">{name}</span>
+                          <span className={`font-extrabold ${bal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {bal >= 0 ? `+ ₹${bal.toFixed(2)} (Gets back)` : `- ₹${Math.abs(bal).toFixed(2)} (Owes)`}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
