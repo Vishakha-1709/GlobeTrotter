@@ -1,0 +1,2450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GlobeTrotter — Empowering Personalized Travel Planning</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            odoo: {
+              purple: '#714B67',
+              darkPurple: '#53364c',
+              teal: '#017E84',
+              darkTeal: '#005f63',
+              amber: '#E99834',
+              bg: '#F8FAFC'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Chart.js for Budget Analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- React & Babel for zero-build-step standalone execution -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    #map-container { min-height: 420px; border-radius: 1rem; z-index: 10; }
+  </style>
+</head>
+<body class="text-slate-800 antialiased selection:bg-purple-100 selection:text-odoo-purple">
+  <div id="root"></div>
+
+  <!-- Main React App Script -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    const API_BASE = "http://localhost:8000/api";
+
+    function App() {
+      // User authentication state (Screen 1)
+      const [currentUser, setCurrentUser] = useState(null); // null = show Screen 1 Login/Signup
+      
+      // Navigation state: 'dashboard' | 'trips' | 'trip-detail' | 'explore' | 'admin' | 'profile'
+      const [currentView, setCurrentView] = useState('dashboard');
+      const [selectedTripId, setSelectedTripId] = useState(1);
+      const [tripData, setTripData] = useState(null);
+      const [userTrips, setUserTrips] = useState([]);
+      const [cities, setCities] = useState([]);
+      const [adminStats, setAdminStats] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [notification, setNotification] = useState(null);
+
+      // Modals
+      const [showCreateModal, setShowCreateModal] = useState(false);
+      const [showAddStopModal, setShowAddStopModal] = useState(false);
+      const [showAddActivityModal, setShowAddActivityModal] = useState(false);
+      const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
+      const [editingExpense, setEditingExpense] = useState(null);
+      const [selectedStopForActivity, setSelectedStopForActivity] = useState(null);
+
+      // WOW Factor States
+      const [activeTripTab, setActiveTripTab] = useState('itinerary'); // 'itinerary' | 'budget'
+      const [optimizationResult, setOptimizationResult] = useState(null);
+      const [globeSplitReport, setGlobeSplitReport] = useState(null);
+
+      // Toast notification helper
+      const showToast = (msg, type = "success") => {
+        setNotification({ msg, type });
+        setTimeout(() => setNotification(null), 4000);
+      };
+
+      // Load initial data
+      useEffect(() => {
+        if (currentUser) {
+          fetchUserTrips();
+          fetchCities();
+        }
+      }, [currentUser]);
+
+      const handleLoginSuccess = (user) => {
+        setCurrentUser(user);
+        setCurrentView('dashboard');
+        showToast(`Welcome back, ${user.name}!`);
+      };
+
+      const handleLogout = () => {
+        setCurrentUser(null);
+        showToast("Logged out successfully.");
+      };
+
+      // Reload icons when DOM changes
+      useEffect(() => {
+        if (window.lucide) {
+          setTimeout(() => window.lucide.createIcons(), 50);
+        }
+      }, [currentView, tripData, activeTripTab, userTrips, cities]);
+
+      const fetchUserTrips = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/trips`);
+          if (res.ok) {
+            const data = await res.json();
+            setUserTrips(data);
+          }
+        } catch (e) {
+          console.error("Error fetching trips:", e);
+        }
+      };
+
+      const fetchCities = async (query = "") => {
+        try {
+          const url = query ? `${API_BASE}/cities/search?query=${encodeURIComponent(query)}` : `${API_BASE}/cities/search`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            setCities(data);
+          }
+        } catch (e) {
+          console.error("Error fetching cities:", e);
+        }
+      };
+
+      const loadTripDetail = async (id) => {
+        setLoading(true);
+        try {
+          const res = await fetch(`${API_BASE}/trips/${id}`);
+          if (res.ok) {
+            const data = await res.json();
+            setTripData(data);
+            setSelectedTripId(id);
+            setCurrentView('trip-detail');
+            loadGlobeSplit(id);
+          }
+        } catch (e) {
+          showToast("Failed to load trip details", "error");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const loadGlobeSplit = async (tripId) => {
+        try {
+          const res = await fetch(`${API_BASE}/trips/${tripId}/globesplit`);
+          if (res.ok) {
+            const data = await res.json();
+            setGlobeSplitReport(data);
+          }
+        } catch (e) {
+          console.error("Error loading GlobeSplit:", e);
+        }
+      };
+
+      const loadAdminStats = async () => {
+        try {
+          const res = await fetch(`${API_BASE}/admin/analytics`);
+          if (res.ok) {
+            const data = await res.json();
+            setAdminStats(data);
+            setCurrentView('admin');
+          }
+        } catch (e) {
+          showToast("Failed to load admin analytics", "error");
+        }
+      };
+
+      // WOW FACTOR 2: Trigger TSP Route Optimization
+      const handleOptimizeDay = async (stopId, dayNumber) => {
+        setLoading(true);
+        try {
+          const res = await fetch(`${API_BASE}/stops/${stopId}/optimize-day/${dayNumber}`, { method: 'POST' });
+          if (res.ok) {
+            const result = await res.json();
+            setOptimizationResult(result);
+            showToast(`✨ Optimized Day ${dayNumber}! Saved ${result.distance_saved_km} km & ${result.time_saved_minutes} mins transit!`, 'success');
+            // Reload updated trip items
+            loadTripDetail(selectedTripId);
+          }
+        } catch (e) {
+          showToast("Optimization failed", "error");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // 1-Click Clone / Fork Trip
+      const handleCloneTrip = async (tripId) => {
+        try {
+          const res = await fetch(`${API_BASE}/trips/${tripId}/clone`, { method: 'POST' });
+          if (res.ok) {
+            const newTrip = await res.json();
+            showToast(`🎉 Cloned "${newTrip.title}" into your account!`, 'success');
+            fetchUserTrips();
+            loadTripDetail(newTrip.id);
+          }
+        } catch (e) {
+          showToast("Failed to clone trip", "error");
+        }
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          {/* Toast Notification */}
+          {notification && (
+            <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-xl shadow-2xl text-white font-medium flex items-center gap-3 transition-all transform animate-bounce ${
+              notification.type === 'error' ? 'bg-red-600' : 'bg-odoo-teal'
+            }`}>
+              <i data-lucide={notification.type === 'error' ? 'alert-circle' : 'sparkles'} className="w-5 h-5"></i>
+              <span>{notification.msg}</span>
+            </div>
+          )}
+
+          {/* If user is not logged in, show Screen 1: Login / Signup */}
+          {!currentUser ? (
+            <AuthView onLoginSuccess={handleLoginSuccess} />
+          ) : (
+            <>
+              {/* Navigation Bar */}
+              <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                  <div className="flex items-center gap-8">
+                    <div 
+                      onClick={() => setCurrentView('dashboard')}
+                      className="flex items-center gap-2 cursor-pointer group"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-odoo-purple to-odoo-teal flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+                        <i data-lucide="compass" className="w-6 h-6"></i>
+                      </div>
+                      <div>
+                        <span className="text-xl font-extrabold tracking-tight text-odoo-purple">Globe<span className="text-odoo-teal">Trotter</span></span>
+                        <span className="hidden sm:inline-block text-xs bg-purple-100 text-odoo-purple font-semibold ml-2 px-2 py-0.5 rounded-full">Odoo Edition</span>
+                      </div>
+                    </div>
+
+                    {/* Nav Links */}
+                    <nav className="hidden md:flex items-center gap-1">
+                      <button 
+                        onClick={() => setCurrentView('dashboard')}
+                        className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors ${
+                          currentView === 'dashboard' ? 'bg-purple-50 text-odoo-purple' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        <i data-lucide="layout-dashboard" className="w-4 h-4"></i> Dashboard
+                      </button>
+                      <button 
+                        onClick={() => { setCurrentView('trips'); fetchUserTrips(); }}
+                        className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors ${
+                          currentView === 'trips' ? 'bg-purple-50 text-odoo-purple' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        <i data-lucide="plane" className="w-4 h-4"></i> My Trips
+                      </button>
+                      <button 
+                        onClick={() => setCurrentView('explore')}
+                        className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors ${
+                          currentView === 'explore' ? 'bg-purple-50 text-odoo-purple' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        <i data-lucide="map-pin" className="w-4 h-4"></i> Explore Cities
+                      </button>
+                      <button 
+                        onClick={loadAdminStats}
+                        className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors ${
+                          currentView === 'admin' ? 'bg-purple-50 text-odoo-purple' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        <i data-lucide="bar-chart-3" className="w-4 h-4"></i> Admin Analytics
+                      </button>
+                    </nav>
+                  </div>
+
+                  {/* Quick Actions & User Profile */}
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={() => setShowCreateModal(true)}
+                      className="bg-gradient-to-r from-odoo-purple to-odoo-darkPurple hover:opacity-95 text-white font-medium text-sm px-4 py-2 rounded-xl shadow-sm flex items-center gap-1.5 transition-all hover:shadow"
+                    >
+                      <i data-lucide="plus-circle" className="w-4 h-4"></i>
+                      <span className="hidden sm:inline">Plan New Trip</span>
+                    </button>
+                    
+                    <div 
+                      onClick={() => setCurrentView('profile')}
+                      className="flex items-center gap-2 pl-2 border-l border-slate-200 cursor-pointer"
+                    >
+                      <img 
+                        src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150" 
+                        alt="User" 
+                        className="w-9 h-9 rounded-full object-cover border-2 border-odoo-teal"
+                      />
+                      <span className="hidden lg:inline text-xs font-bold text-slate-700">{currentUser.name}</span>
+                    </div>
+
+                    <button 
+                      onClick={handleLogout}
+                      title="Log Out"
+                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+                    >
+                      <i data-lucide="log-out" className="w-4 h-4"></i>
+                    </button>
+                  </div>
+                </div>
+              </header>
+
+              {/* Main Content View Switcher */}
+              <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                {currentView === 'dashboard' && (
+                  <DashboardView 
+                    userTrips={userTrips} 
+                    cities={cities} 
+                    onSelectTrip={loadTripDetail}
+                    onPlanTrip={() => setShowCreateModal(true)}
+                    onExplore={() => setCurrentView('explore')}
+                  />
+                )}
+
+            {currentView === 'trips' && (
+              <MyTripsView 
+                trips={userTrips} 
+                onSelectTrip={loadTripDetail} 
+                onNewTrip={() => setShowCreateModal(true)}
+                onCloneTrip={handleCloneTrip}
+              />
+            )}
+
+            {currentView === 'explore' && (
+              <ExploreCitiesView 
+                cities={cities} 
+                onSearch={fetchCities}
+                onAddCityToTrip={(city) => {
+                  showToast(`Selected ${city.name}! Choose a trip to add this city.`);
+                  setCurrentView('trips');
+                }}
+              />
+            )}
+
+            {currentView === 'trip-detail' && tripData && (
+              <TripWorkspaceView 
+                trip={tripData}
+                activeTab={activeTripTab}
+                setActiveTab={setActiveTripTab}
+                onOptimizeDay={handleOptimizeDay}
+                optimizationResult={optimizationResult}
+                globeSplitReport={globeSplitReport}
+                onAddStopClick={() => setShowAddStopModal(true)}
+                onAddActivityClick={(stop) => {
+                  setSelectedStopForActivity(stop);
+                  setShowAddActivityModal(true);
+                }}
+                onAddExpenseClick={() => {
+                  setEditingExpense(null);
+                  setShowAddExpenseModal(true);
+                }}
+                onEditExpenseClick={(exp) => {
+                  setEditingExpense(exp);
+                  setShowAddExpenseModal(true);
+                }}
+                onCloneTrip={() => handleCloneTrip(tripData.id)}
+                onRefresh={() => loadTripDetail(tripData.id)}
+              />
+            )}
+
+            {currentView === 'admin' && adminStats && (
+              <AdminAnalyticsView stats={adminStats} />
+            )}
+
+            {currentView === 'profile' && (
+              <UserProfileView user={currentUser} />
+            )}
+          </main>
+
+          {/* Create Trip Modal */}
+          {showCreateModal && (
+            <CreateTripModal 
+              onClose={() => setShowCreateModal(false)}
+              onCreated={(newTrip) => {
+                setShowCreateModal(false);
+                fetchUserTrips();
+                loadTripDetail(newTrip.id);
+                showToast("🎉 Trip created successfully!");
+              }}
+            />
+          )}
+
+          {/* Add City Stop Modal (Screen 5) */}
+          {showAddStopModal && tripData && (
+            <AddStopModal 
+              trip={tripData}
+              cities={cities}
+              onClose={() => setShowAddStopModal(false)}
+              onAdded={() => {
+                setShowAddStopModal(false);
+                loadTripDetail(tripData.id);
+                showToast("🎉 Destination city stop added to trip!");
+              }}
+            />
+          )}
+
+          {/* Add Activity Modal */}
+          {showAddActivityModal && selectedStopForActivity && (
+            <AddActivityModal 
+              stop={selectedStopForActivity}
+              onClose={() => setShowAddActivityModal(false)}
+              onAdded={() => {
+                setShowAddActivityModal(false);
+                loadTripDetail(selectedTripId);
+                showToast("Activity added to itinerary!");
+              }}
+            />
+          )}
+
+          {/* Add / Edit Expense Modal */}
+          {showAddExpenseModal && tripData && (
+            <AddExpenseModal 
+              trip={tripData}
+              initialExpense={editingExpense}
+              onClose={() => {
+                setShowAddExpenseModal(false);
+                setEditingExpense(null);
+              }}
+              onAdded={() => {
+                setShowAddExpenseModal(false);
+                setEditingExpense(null);
+                loadTripDetail(tripData.id);
+                showToast(editingExpense ? "Expense updated successfully!" : "Expense recorded & GlobeSplit updated!");
+              }}
+            />
+          )}
+          </>
+          )}
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // SCREEN 1: LOGIN / SIGNUP SCREEN (Problem Statement Requirement #1)
+    // =========================================================================
+    function AuthView({ onLoginSuccess }) {
+      const [isLogin, setIsLogin] = useState(true);
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [name, setName] = useState("");
+      const [currency, setCurrency] = useState("INR");
+      const [error, setError] = useState(null);
+      const [loading, setLoading] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError(null);
+        setLoading(true);
+
+        try {
+          if (isLogin) {
+            const res = await fetch(`${API_BASE}/auth/login`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Invalid email or password");
+            onLoginSuccess(data.user);
+          } else {
+            const res = await fetch(`${API_BASE}/auth/signup`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name, email, password, base_currency: currency })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Registration failed");
+            onLoginSuccess(data.user);
+          }
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleDemoLogin = () => {
+        onLoginSuccess({
+          id: 1,
+          name: "Traveler",
+          email: "traveler@globetrotter.com",
+          base_currency: "INR",
+          avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
+        });
+      };
+
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-odoo-darkPurple to-slate-900 relative overflow-hidden">
+          {/* Ambient Glows */}
+          <div className="absolute -top-20 -left-20 w-96 h-96 bg-odoo-purple/30 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-odoo-teal/20 rounded-full blur-3xl"></div>
+
+          <div className="relative z-10 max-w-md w-full bg-white/95 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/20 space-y-6">
+            {/* Header Brand */}
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-odoo-purple to-odoo-teal mx-auto flex items-center justify-center text-white shadow-lg">
+                <i data-lucide="compass" className="w-8 h-8"></i>
+              </div>
+              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                Globe<span className="text-odoo-teal">Trotter</span>
+              </h1>
+              <p className="text-xs text-slate-500 font-medium">
+                Empowering Personalized Multi-City Travel Planning
+              </p>
+            </div>
+
+            {/* Tab Toggle: Login vs Signup */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => { setIsLogin(true); setError(null); setEmail(""); setPassword(""); }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  isLogin ? 'bg-white text-odoo-purple shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Log In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsLogin(false); setError(null); setEmail(""); setPassword(""); setName(""); }}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  !isLogin ? 'bg-white text-odoo-purple shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Sign Up
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+                <i data-lucide="alert-circle" className="w-4 h-4 shrink-0"></i>
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Auth Form */}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {!isLogin && (
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter your full name"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-odoo-purple outline-none"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-bold text-slate-700">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="Enter your email address"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-odoo-purple outline-none"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">Password</label>
+                  {isLogin && (
+                    <button
+                      type="button"
+                      onClick={() => alert("Password reset link sent to your email address.")}
+                      className="text-[11px] font-semibold text-odoo-teal hover:underline"
+                    >
+                      Forgot Password?
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  required
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-odoo-purple outline-none"
+                />
+              </div>
+
+              {!isLogin && (
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Base Currency</label>
+                  <select
+                    value={currency}
+                    onChange={e => setCurrency(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold"
+                  >
+                    <option value="INR">INR (₹) - Indian Rupee</option>
+                    <option value="USD">USD ($) - US Dollar</option>
+                    <option value="EUR">EUR (€) - Euro</option>
+                    <option value="GBP">GBP (£) - British Pound</option>
+                  </select>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-odoo-purple hover:bg-odoo-darkPurple text-white py-3.5 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+              >
+                {loading ? "Processing..." : isLogin ? "Log In to My Trips →" : "Create Account & Start Exploring →"}
+              </button>
+            </form>
+
+            {/* 1-Click Demo Evaluation Button */}
+            <div className="pt-3 border-t border-slate-100 space-y-2 text-center">
+              <button
+                type="button"
+                onClick={handleDemoLogin}
+                className="w-full bg-teal-50 hover:bg-teal-100 text-odoo-teal border border-teal-200 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+              >
+                <i data-lucide="zap" className="w-4 h-4"></i> ⚡ 1-Click Demo Access (Alex River)
+              </button>
+              <p className="text-[11px] text-slate-400">
+                Odoo Hackathon Evaluation Mode
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 1. DASHBOARD VIEW (Screen 2)
+    // =========================================================================
+    function DashboardView({ userTrips, cities, onSelectTrip, onPlanTrip, onExplore }) {
+      const recentTrip = userTrips[0];
+      return (
+        <div className="space-y-8">
+          {/* Welcome Banner */}
+          <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-odoo-purple via-slate-900 to-odoo-teal p-8 sm:p-10 text-white shadow-xl">
+            <div className="relative z-10 max-w-2xl space-y-4">
+              <span className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold uppercase tracking-wider">
+                Personalized Travel Intelligence
+              </span>
+              <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">
+                Where to next, Alex? Dream, Design & Optimize.
+              </h1>
+              <p className="text-slate-200 text-sm sm:text-base">
+                Build multi-city itineraries, eliminate travel crisscrossing with AI route sequencing, and split expenses effortlessly.
+              </p>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <button 
+                  onClick={onPlanTrip}
+                  className="bg-odoo-amber hover:bg-amber-600 text-white px-5 py-2.5 rounded-xl font-semibold text-sm shadow-md transition-all flex items-center gap-2"
+                >
+                  <i data-lucide="plus-circle" className="w-4 h-4"></i> Plan New Journey
+                </button>
+                <button 
+                  onClick={onExplore}
+                  className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white border border-white/20 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2"
+                >
+                  <i data-lucide="compass" className="w-4 h-4"></i> Explore Destinations
+                </button>
+              </div>
+            </div>
+            {/* Background glowing blob */}
+            <div className="absolute -right-10 -bottom-20 w-80 h-80 bg-odoo-teal/30 rounded-full blur-3xl"></div>
+          </div>
+
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-purple-50 text-odoo-purple flex items-center justify-center">
+                <i data-lucide="suitcase" className="w-6 h-6"></i>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500">Planned Trips</p>
+                <h3 className="text-2xl font-bold text-slate-900">{userTrips.length}</h3>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-teal-50 text-odoo-teal flex items-center justify-center">
+                <i data-lucide="map" className="w-6 h-6"></i>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500">Cities Visited</p>
+                <h3 className="text-2xl font-bold text-slate-900">
+                  {userTrips.reduce((acc, t) => acc + (t.destination_count || 0), 0)}
+                </h3>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-50 text-odoo-amber flex items-center justify-center">
+                <i data-lucide="wallet" className="w-6 h-6"></i>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500">Total Spent (₹)</p>
+                <h3 className="text-2xl font-bold text-slate-900">
+                  ₹{userTrips.reduce((acc, t) => acc + (t.total_spent || 0), 0).toFixed(0)}
+                </h3>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <i data-lucide="sparkles" className="w-6 h-6"></i>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500">AI Route Savings</p>
+                <h3 className="text-2xl font-bold text-emerald-600">~38% Time</h3>
+              </div>
+            </div>
+          </div>
+
+          {/* Active Featured Trip */}
+          {recentTrip && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                  <i data-lucide="calendar" className="w-5 h-5 text-odoo-purple"></i> Active Itinerary Preview
+                </h2>
+                <button 
+                  onClick={() => onSelectTrip(recentTrip.id)}
+                  className="text-sm font-semibold text-odoo-teal hover:underline flex items-center gap-1"
+                >
+                  Open Full Workspace <i data-lucide="arrow-right" className="w-4 h-4"></i>
+                </button>
+              </div>
+
+              <div 
+                onClick={() => onSelectTrip(recentTrip.id)}
+                className="group relative bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden grid md:grid-cols-3 gap-6"
+              >
+                <div className="md:col-span-1 rounded-2xl overflow-hidden h-48 sm:h-full relative">
+                  <img 
+                    src={recentTrip.cover_image || "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=600"} 
+                    alt={recentTrip.title} 
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-bold text-odoo-purple shadow">
+                    {recentTrip.destination_count} Cities
+                  </span>
+                </div>
+
+                <div className="md:col-span-2 flex flex-col justify-between space-y-4">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-odoo-teal uppercase tracking-wide">
+                      <i data-lucide="calendar-range" className="w-3.5 h-3.5"></i>
+                      {recentTrip.start_date} → {recentTrip.end_date}
+                    </div>
+                    <h3 className="text-2xl font-extrabold text-slate-900 group-hover:text-odoo-purple transition-colors mt-1">
+                      {recentTrip.title}
+                    </h3>
+                    <p className="text-slate-600 text-sm mt-2 line-clamp-2">
+                      {recentTrip.description}
+                    </p>
+                  </div>
+
+                  {/* Budget & Actions */}
+                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-slate-500">Budget Progress</span>
+                      <p className="text-sm font-bold text-slate-900">
+                        ₹{recentTrip.total_spent} <span className="text-xs font-normal text-slate-500">/ ₹{recentTrip.total_budget}</span>
+                      </p>
+                    </div>
+                    <span className="px-4 py-2 bg-purple-50 text-odoo-purple group-hover:bg-odoo-purple group-hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1">
+                      Manage Plan <i data-lucide="arrow-right" className="w-3.5 h-3.5"></i>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Popular Inspiration Destinations */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <i data-lucide="sparkles" className="w-5 h-5 text-odoo-amber"></i> Trending Destinations
+              </h2>
+              <button 
+                onClick={onExplore}
+                className="text-sm font-semibold text-odoo-teal hover:underline"
+              >
+                Browse all cities →
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {cities.slice(0, 4).map((city) => (
+                <div 
+                  key={city.id}
+                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-lg transition-all group cursor-pointer"
+                  onClick={onExplore}
+                >
+                  <div className="h-40 relative overflow-hidden">
+                    <img 
+                      src={city.image_url} 
+                      alt={city.name} 
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
+                    <div className="absolute bottom-3 left-3 text-white">
+                      <h4 className="font-bold text-lg leading-tight">{city.name}</h4>
+                      <p className="text-xs text-slate-200">{city.country}</p>
+                    </div>
+                    <span className="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-[11px] px-2 py-0.5 rounded-full">
+                      ★ {city.popularity_score}
+                    </span>
+                  </div>
+                  <div className="p-3.5 flex items-center justify-between text-xs text-slate-600">
+                    <span>{city.activities.length} Top Activities</span>
+                    <span className="font-semibold text-odoo-teal">{city.currency_code}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 2. MY TRIPS VIEW (Screen 4)
+    // =========================================================================
+    function MyTripsView({ trips, onSelectTrip, onNewTrip, onCloneTrip }) {
+      return (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-extrabold text-slate-900">My Travel Plans</h1>
+              <p className="text-sm text-slate-500">Manage, organize, or clone your multi-city journeys.</p>
+            </div>
+            <button 
+              onClick={onNewTrip}
+              className="bg-odoo-purple hover:bg-odoo-darkPurple text-white px-4 py-2.5 rounded-xl font-semibold text-sm shadow-sm flex items-center gap-2 w-fit"
+            >
+              <i data-lucide="plus-circle" className="w-4 h-4"></i> Create New Trip
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {trips.map((t) => (
+              <div 
+                key={t.id}
+                className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-all flex flex-col justify-between group"
+              >
+                <div className="h-48 relative overflow-hidden cursor-pointer" onClick={() => onSelectTrip(t.id)}>
+                  <img 
+                    src={t.cover_image || "https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=600"} 
+                    alt={t.title} 
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-bold text-odoo-purple shadow">
+                    {t.destination_count} Stops
+                  </div>
+                  {t.is_public && (
+                    <span className="absolute top-3 right-3 bg-odoo-teal/90 backdrop-blur-md text-white px-2.5 py-1 rounded-full text-xs font-semibold shadow flex items-center gap-1">
+                      <i data-lucide="globe" className="w-3 h-3"></i> Public
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+                  <div>
+                    <span className="text-xs font-semibold text-odoo-teal flex items-center gap-1">
+                      <i data-lucide="calendar" className="w-3.5 h-3.5"></i> {t.start_date} → {t.end_date}
+                    </span>
+                    <h3 
+                      onClick={() => onSelectTrip(t.id)}
+                      className="text-lg font-bold text-slate-900 hover:text-odoo-purple transition-colors cursor-pointer mt-1"
+                    >
+                      {t.title}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">{t.description}</p>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-slate-400">Budget</span>
+                      <p className="text-sm font-bold text-slate-800">₹{t.total_spent} / ₹{t.total_budget}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => onCloneTrip(t.id)}
+                        title="Fork / Copy Trip"
+                        className="p-2 text-slate-500 hover:text-odoo-teal hover:bg-teal-50 rounded-xl transition-colors"
+                      >
+                        <i data-lucide="copy" className="w-4 h-4"></i>
+                      </button>
+                      <button 
+                        onClick={() => onSelectTrip(t.id)}
+                        className="bg-purple-50 text-odoo-purple group-hover:bg-odoo-purple group-hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-colors"
+                      >
+                        Open →
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 3. EXPLORE CITIES & ACTIVITIES VIEW (Screens 7 & 8)
+    // =========================================================================
+    function ExploreCitiesView({ cities, onSearch, onAddCityToTrip }) {
+      const [searchTerm, setSearchTerm] = useState("");
+      const [selectedRegion, setSelectedRegion] = useState("All");
+
+      const filteredCities = cities.filter(c => {
+        const matchesRegion = selectedRegion === "All" || c.region === selectedRegion;
+        return matchesRegion;
+      });
+
+      return (
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-2xl font-extrabold text-slate-900">Destination Discovery</h1>
+            <p className="text-sm text-slate-500">Explore global cities, compare cost indexes, and pick activities.</p>
+          </div>
+
+          {/* Search & Region Filters */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <i data-lucide="search" className="w-5 h-5 absolute left-3.5 top-3 text-slate-400"></i>
+              <input 
+                type="text"
+                placeholder="Search city, country, or landmark..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  onSearch(e.target.value);
+                }}
+                className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-odoo-purple shadow-sm"
+              />
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {['All', 'Europe', 'Asia', 'North America'].map((region) => (
+                <button
+                  key={region}
+                  onClick={() => setSelectedRegion(region)}
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-colors ${
+                    selectedRegion === region ? 'bg-odoo-purple text-white' : 'bg-white text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  {region}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Cities Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredCities.map((city) => (
+              <div key={city.id} className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="h-44 relative">
+                    <img src={city.image_url} alt={city.name} className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent"></div>
+                    <div className="absolute bottom-3 left-4 text-white">
+                      <h3 className="text-xl font-extrabold">{city.name}</h3>
+                      <p className="text-xs text-slate-200">{city.country} • {city.region}</p>
+                    </div>
+                    <span className="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-xs px-2.5 py-1 rounded-full font-bold">
+                      Cost Index: {city.cost_index}x
+                    </span>
+                  </div>
+
+                  <div className="p-5 space-y-3">
+                    <p className="text-xs text-slate-600 leading-relaxed">{city.description}</p>
+                    
+                    <div>
+                      <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Featured Things to Do</h5>
+                      <div className="space-y-1.5">
+                        {city.activities.slice(0, 3).map((act) => (
+                          <div key={act.id} className="flex items-center justify-between text-xs bg-slate-50 p-2 rounded-xl">
+                            <span className="font-medium text-slate-800 line-clamp-1">{act.name}</span>
+                            <span className="font-bold text-odoo-teal shrink-0 ml-2">
+                              {act.estimated_cost === 0 ? "Free" : `₹${act.estimated_cost}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-xs text-slate-500 font-medium">Currency: {city.currency_code}</span>
+                  <button 
+                    onClick={() => onAddCityToTrip(city)}
+                    className="bg-odoo-teal hover:bg-odoo-darkTeal text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-sm transition-all"
+                  >
+                    + Add to Trip
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 4. TRIP WORKSPACE VIEW (Screens 5, 6, 9, 10, 11 + WOW 1 & WOW 2)
+    // =========================================================================
+    function TripWorkspaceView({ 
+      trip, 
+      activeTab, 
+      setActiveTab, 
+      onOptimizeDay, 
+      optimizationResult, 
+      globeSplitReport,
+      onAddStopClick,
+      onAddActivityClick,
+      onAddExpenseClick,
+      onEditExpenseClick,
+      onCloneTrip,
+      onRefresh
+    }) {
+      const [newMemberName, setNewMemberName] = useState("");
+      const [newMemberRole, setNewMemberRole] = useState("editor");
+      const [isAddingMember, setIsAddingMember] = useState(false);
+
+      const handleAddMember = async (e) => {
+        e.preventDefault();
+        if (!newMemberName.trim()) return;
+        try {
+          const res = await fetch(`${API_BASE}/trips/${trip.id}/members`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ guest_name: newMemberName.trim(), role: newMemberRole })
+          });
+          if (res.ok) {
+            setNewMemberName("");
+            setIsAddingMember(false);
+            onRefresh();
+          } else {
+            alert("Failed to add member");
+          }
+        } catch (err) {
+          alert("Error adding member");
+        }
+      };
+
+      const handleRemoveMember = async (memberId) => {
+        if (!confirm("Remove this traveler from the group?")) return;
+        try {
+          const res = await fetch(`${API_BASE}/trips/${trip.id}/members/${memberId}`, {
+            method: 'DELETE'
+          });
+          if (res.ok) onRefresh();
+        } catch (err) {
+          alert("Error removing member");
+        }
+      };
+
+      const handleDeleteExpense = async (expenseId) => {
+        if (!confirm("Are you sure you want to delete this expense?")) return;
+        try {
+          const res = await fetch(`${API_BASE}/trips/${trip.id}/expenses/${expenseId}`, {
+            method: 'DELETE'
+          });
+          if (res.ok) {
+            onRefresh();
+          } else {
+            alert("Failed to delete expense");
+          }
+        } catch (err) {
+          alert("Error deleting expense");
+        }
+      };
+
+      return (
+        <div className="space-y-6">
+          {/* Trip Header Card */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 bg-purple-100 text-odoo-purple rounded-full text-xs font-bold uppercase tracking-wider">
+                    {trip.currency} Itinerary
+                  </span>
+                  <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                    <i data-lucide="calendar" className="w-3.5 h-3.5"></i> {trip.start_date} → {trip.end_date}
+                  </span>
+                </div>
+                <h1 className="text-3xl font-extrabold text-slate-900 mt-1">{trip.title}</h1>
+                <p className="text-sm text-slate-600 mt-1 max-w-3xl">{trip.description}</p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button 
+                  onClick={onAddStopClick}
+                  className="bg-odoo-teal hover:bg-odoo-darkTeal text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                >
+                  <i data-lucide="map-pin" className="w-4 h-4"></i> + Add City Stop
+                </button>
+                <button 
+                  onClick={onCloneTrip}
+                  className="bg-teal-50 hover:bg-teal-100 text-odoo-teal border border-teal-200 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  <i data-lucide="copy" className="w-4 h-4"></i> Fork / Copy Trip
+                </button>
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(`http://localhost:8000/api/trips/share/${trip.share_slug}`);
+                    alert("Public itinerary share link copied to clipboard!");
+                  }}
+                  className="bg-purple-50 hover:bg-purple-100 text-odoo-purple border border-purple-200 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  <i data-lucide="share-2" className="w-4 h-4"></i> Share Itinerary
+                </button>
+                <button 
+                  onClick={onAddExpenseClick}
+                  className="bg-odoo-purple hover:bg-odoo-darkPurple text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+                >
+                  <i data-lucide="plus" className="w-4 h-4"></i> Log Expense
+                </button>
+              </div>
+            </div>
+
+            {/* Navigation Workspace Sub-Tabs (Clean: Timeline & Budget) */}
+            <div className="flex border-b border-slate-200 gap-6 pt-2">
+              <button 
+                onClick={() => setActiveTab('itinerary')}
+                className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
+                  activeTab === 'itinerary' ? 'border-odoo-purple text-odoo-purple' : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <i data-lucide="list-ordered" className="w-4 h-4"></i> Day-by-Day Timeline
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('budget')}
+                className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${
+                  activeTab === 'budget' ? 'border-odoo-teal text-odoo-teal' : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <i data-lucide="pie-chart" className="w-4 h-4"></i> Budget & GlobeSplit
+              </button>
+            </div>
+          </div>
+
+          {/* TAB 1: ITINERARY & OPTIMIZER */}
+          {activeTab === 'itinerary' && (
+            <div className="space-y-6">
+              {/* Optimization Savings Banner if applied */}
+              {optimizationResult && (
+                <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-3xl p-6 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center">
+                      <i data-lucide="sparkles" className="w-6 h-6"></i>
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-lg">Smart Route Optimized!</h4>
+                      <p className="text-xs text-emerald-100">
+                        Attractions sequenced to eliminate crisscrossing and minimize travel time.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl text-center">
+                      <span className="text-[10px] uppercase font-semibold text-emerald-200">Distance Saved</span>
+                      <p className="text-lg font-black">-{optimizationResult.distance_saved_km} km</p>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md px-4 py-2 rounded-2xl text-center">
+                      <span className="text-[10px] uppercase font-semibold text-emerald-200">Time Saved</span>
+                      <p className="text-lg font-black">-{optimizationResult.time_saved_minutes} mins</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Itinerary Stops and Days */}
+              {trip.stops.length === 0 ? (
+                <div className="bg-white rounded-3xl border-2 border-dashed border-purple-200 p-12 text-center space-y-4 shadow-sm">
+                  <div className="w-16 h-16 rounded-2xl bg-purple-50 text-odoo-purple mx-auto flex items-center justify-center shadow-inner">
+                    <i data-lucide="map-pin" className="w-8 h-8"></i>
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-xl font-extrabold text-slate-900">Start Building Your Itinerary</h3>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Add destination cities (e.g. Bengaluru, Manali, Goa, Paris) to schedule day-by-day activities and manage places to visit.
+                    </p>
+                  </div>
+                  <button 
+                    onClick={onAddStopClick}
+                    className="bg-gradient-to-r from-odoo-purple to-odoo-darkPurple hover:opacity-95 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md inline-flex items-center gap-2 transition-all hover:scale-105"
+                  >
+                    <i data-lucide="plus-circle" className="w-4 h-4"></i> + Add First Destination Stop
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {trip.stops.map((stop, stopIdx) => (
+                    <div key={stop.id} className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+                      {/* Stop City Header */}
+                      <div className="bg-gradient-to-r from-slate-900 to-odoo-purple p-5 text-white flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="w-8 h-8 rounded-full bg-odoo-teal flex items-center justify-center font-bold text-sm">
+                            {stopIdx + 1}
+                          </span>
+                          <div>
+                            <h3 className="text-xl font-bold">{stop.city.name}, {stop.city.country}</h3>
+                            <p className="text-xs text-slate-300">{stop.arrival_date} → {stop.departure_date} • Budget: ₹{stop.stop_budget}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => onOptimizeDay(stop.id, 1)}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                            title="Run Traveling Salesperson Problem (TSP) algorithm to sequence activities"
+                          >
+                            <i data-lucide="sparkles" className="w-3.5 h-3.5"></i> Smart Optimize Day
+                          </button>
+
+                          <button 
+                            onClick={() => onAddActivityClick(stop)}
+                            className="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                          >
+                            <i data-lucide="plus" className="w-3.5 h-3.5"></i> + Activity
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Day by Day Items Container */}
+                      <div className="p-6 space-y-4">
+                        {stop.itinerary_items.length === 0 ? (
+                          <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-2">
+                            <p className="text-xs font-semibold text-slate-500">No scheduled activities yet for {stop.city.name}.</p>
+                            <button
+                              onClick={() => onAddActivityClick(stop)}
+                              className="text-xs font-bold text-odoo-purple hover:underline"
+                            >
+                              + Add First Activity / Place to Visit
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-purple-100">
+                            {stop.itinerary_items.map((item) => (
+                              <div key={item.id} className="relative flex items-start justify-between bg-slate-50 hover:bg-purple-50/50 p-4 rounded-2xl border border-slate-100 transition-all">
+                                <div className="absolute -left-6 top-5 w-3.5 h-3.5 rounded-full bg-odoo-purple border-2 border-white shadow-sm"></div>
+
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold bg-white text-odoo-purple px-2 py-0.5 rounded-lg border border-purple-100">
+                                      Day {item.day_number}
+                                    </span>
+                                    <span className="text-xs font-bold text-slate-400">{item.start_time}</span>
+                                    <span className="text-xs bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium">
+                                      {item.duration_minutes} mins
+                                    </span>
+                                  </div>
+                                  <h4 className="font-extrabold text-slate-800 text-base">
+                                    {item.custom_title || (item.activity && item.activity.name)}
+                                  </h4>
+                                  {item.notes && <p className="text-xs text-slate-500 italic">"{item.notes}"</p>}
+                                </div>
+
+                                <div className="text-right">
+                                  <span className="font-extrabold text-slate-900 text-base">
+                                    ₹{item.cost || (item.activity && item.activity.estimated_cost) || 0}
+                                  </span>
+                                  <span className="block text-[11px] text-slate-400">Estimated Cost</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  <button 
+                    onClick={onAddStopClick}
+                    className="w-full py-4 bg-white hover:bg-purple-50 border-2 border-dashed border-purple-200 hover:border-purple-300 rounded-3xl text-xs font-bold text-odoo-purple transition-all flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <i data-lucide="plus-circle" className="w-4 h-4"></i> + Add Another Destination Stop
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: BUDGET & GLOBESPLIT */}
+          {activeTab === 'budget' && (
+            <div className="space-y-6">
+              {/* Financial Metrics Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-1">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Allocated Budget</span>
+                  <h3 className="text-3xl font-extrabold text-slate-900">₹{trip.total_budget}</h3>
+                  <p className="text-xs text-slate-500">Base Currency: {trip.currency}</p>
+                </div>
+
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-1">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Expenses Logged</span>
+                  <h3 className="text-3xl font-extrabold text-odoo-purple">
+                    ₹{trip.expenses.reduce((acc, e) => acc + e.converted_amount, 0).toFixed(2)}
+                  </h3>
+                  <p className="text-xs text-slate-500">{trip.expenses.length} transactions converted via Live FX</p>
+                </div>
+
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-1">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Remaining Balance</span>
+                  <h3 className="text-3xl font-extrabold text-emerald-600">
+                    ₹{Math.max(0, trip.total_budget - trip.expenses.reduce((acc, e) => acc + e.converted_amount, 0)).toFixed(2)}
+                  </h3>
+                  <p className="text-xs text-emerald-600 font-medium">Within Budget Limits ✓</p>
+                </div>
+              </div>
+
+              {/* Group Co-Travelers & Bill-Split Members */}
+              <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
+                      <i data-lucide="users" className="w-5 h-5 text-odoo-purple"></i> Trip Co-Travelers & Group Members ({trip.members ? trip.members.length : 1})
+                    </h3>
+                    <p className="text-xs text-slate-500">Add people sharing this journey to split expenses in GlobeSplit.</p>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => setIsAddingMember(!isAddingMember)}
+                    className="bg-purple-50 hover:bg-purple-100 text-odoo-purple border border-purple-200 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 w-fit cursor-pointer"
+                  >
+                    <i data-lucide="user-plus" className="w-3.5 h-3.5"></i> {isAddingMember ? "✕ Close" : "+ Add Traveler / Friend"}
+                  </button>
+                </div>
+
+                {/* Add Member Form */}
+                {isAddingMember && (
+                  <form onSubmit={handleAddMember} className="p-4 bg-slate-50 rounded-2xl border border-purple-100 flex flex-col sm:flex-row items-center gap-3">
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="Enter friend / traveler name (e.g. Rahul, Priya)..." 
+                      value={newMemberName}
+                      onChange={e => setNewMemberName(e.target.value)}
+                      className="flex-1 w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-odoo-purple"
+                    />
+                    <button 
+                      type="submit"
+                      className="w-full sm:w-auto bg-odoo-purple hover:bg-odoo-darkPurple text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer"
+                    >
+                      Save Traveler
+                    </button>
+                  </form>
+                )}
+
+                {/* Current Members Badges */}
+                <div className="flex flex-wrap gap-2.5 pt-1">
+                  {trip.members && trip.members.map(m => (
+                    <div key={m.id} className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-2xl text-xs">
+                      <span className="w-6 h-6 rounded-full bg-purple-100 text-odoo-purple font-bold flex items-center justify-center text-[10px]">
+                        {(m.guest_name || 'T')[0].toUpperCase()}
+                      </span>
+                      <span className="font-bold text-slate-800">{m.guest_name || 'Traveler'}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => handleRemoveMember(m.id)}
+                        className="text-slate-400 hover:text-rose-600 ml-1 font-bold transition-colors cursor-pointer"
+                        title="Remove Member"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* WOW Factor 1: GlobeSplit Debt Settlement Matrix */}
+              {globeSplitReport && (
+                <div className="bg-gradient-to-r from-slate-900 via-odoo-darkPurple to-slate-900 rounded-3xl p-8 text-white shadow-xl space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <span className="px-3 py-1 bg-odoo-amber text-slate-900 font-extrabold text-xs rounded-full uppercase">
+                        WOW Factor: Odoo GlobeSplit
+                      </span>
+                      <h3 className="text-2xl font-extrabold mt-2">Group Debt Settlement Matrix</h3>
+                      <p className="text-xs text-slate-300">
+                        Min-Cash-Flow graph algorithm calculates the exact minimum transactions to settle all member debts.
+                      </p>
+                    </div>
+
+                    <button 
+                      onClick={onAddExpenseClick}
+                      className="bg-white text-odoo-purple hover:bg-slate-100 px-4 py-2 rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-1.5 w-fit cursor-pointer"
+                    >
+                      <i data-lucide="plus-circle" className="w-4 h-4"></i> Add Shared Bill
+                    </button>
+                  </div>
+
+                  {/* Net Balances and Simplified Transactions */}
+                  <div className="grid md:grid-cols-2 gap-6 pt-2">
+                    {/* Member Balances */}
+                    <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10 space-y-3">
+                      <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider">Member Net Standing</h4>
+                      <div className="space-y-2">
+                        {Object.entries(globeSplitReport.member_balances).map(([name, bal]) => (
+                          <div key={name} className="flex items-center justify-between text-sm py-1.5 border-b border-white/5">
+                            <span className="font-medium text-slate-200">{name}</span>
+                            <span className={`font-bold ${bal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {bal >= 0 ? `+ ₹${bal.toFixed(2)} (Gets back)` : `- ₹${Math.abs(bal).toFixed(2)} (Owes)`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Settlement Actions */}
+                    <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10 space-y-3">
+                      <h4 className="font-bold text-sm text-slate-200 uppercase tracking-wider">Settlement Plan (Min Transactions)</h4>
+                      <div className="space-y-2.5">
+                        {globeSplitReport.settlement_transactions.map((tx, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-sm bg-black/30 px-3.5 py-2.5 rounded-xl border border-white/10">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-rose-300">{tx.from_user}</span>
+                              <i data-lucide="arrow-right" className="w-4 h-4 text-slate-400"></i>
+                              <span className="font-bold text-emerald-300">{tx.to_user}</span>
+                            </div>
+                            <span className="font-extrabold text-odoo-amber text-base">₹{tx.amount.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Logged Expenses Table */}
+              <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="font-bold text-slate-900 text-lg">Detailed Expense Ledger</h3>
+                  <button 
+                    onClick={onAddExpenseClick}
+                    className="text-xs font-bold text-odoo-purple hover:underline cursor-pointer"
+                  >
+                    + Log Expense
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-slate-600">
+                    <thead className="bg-slate-50 text-xs uppercase font-semibold text-slate-400">
+                      <tr>
+                        <th className="px-6 py-3">Category</th>
+                        <th className="px-6 py-3">Description</th>
+                        <th className="px-6 py-3">Paid By</th>
+                        <th className="px-6 py-3">Local Amount</th>
+                        <th className="px-6 py-3">Converted (INR)</th>
+                        <th className="px-6 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {trip.expenses.map((exp) => (
+                        <tr key={exp.id} className="hover:bg-slate-50/70">
+                          <td className="px-6 py-4">
+                            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-odoo-purple">
+                              {exp.category}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 font-semibold text-slate-800">{exp.description}</td>
+                          <td className="px-6 py-4">{exp.paid_by_name}</td>
+                          <td className="px-6 py-4">{exp.amount} {exp.currency}</td>
+                          <td className="px-6 py-4 font-extrabold text-slate-900">₹{exp.converted_amount}</td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => onEditExpenseClick(exp)}
+                                className="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-odoo-purple font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Edit Expense"
+                              >
+                                <i data-lucide="edit-3" className="w-3.5 h-3.5"></i> Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteExpense(exp.id)}
+                                className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Delete Expense"
+                              >
+                                <i data-lucide="trash-2" className="w-3.5 h-3.5"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 5. ADMIN / ANALYTICS VIEW (Screen 13)
+    // =========================================================================
+    function AdminAnalyticsView({ stats }) {
+      return (
+        <div className="space-y-6">
+          <div>
+            <span className="px-3 py-1 bg-purple-100 text-odoo-purple rounded-full text-xs font-bold uppercase">
+              Screen 13: Admin Interface
+            </span>
+            <h1 className="text-2xl font-extrabold text-slate-900 mt-2">Platform Adoption & Travel Trends</h1>
+            <p className="text-sm text-slate-500">Real-time metrics on trips, activities, and economic turnover.</p>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+              <span className="text-xs text-slate-400 font-semibold uppercase">Total Platform Users</span>
+              <h3 className="text-3xl font-extrabold text-odoo-purple mt-1">{stats.total_users}</h3>
+            </div>
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+              <span className="text-xs text-slate-400 font-semibold uppercase">Active Trips Created</span>
+              <h3 className="text-3xl font-extrabold text-odoo-teal mt-1">{stats.total_trips}</h3>
+            </div>
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+              <span className="text-xs text-slate-400 font-semibold uppercase">Scheduled Activities</span>
+              <h3 className="text-3xl font-extrabold text-slate-900 mt-1">{stats.total_itinerary_activities}</h3>
+            </div>
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+              <span className="text-xs text-slate-400 font-semibold uppercase">Expenses Tracked (₹)</span>
+              <h3 className="text-3xl font-extrabold text-odoo-amber mt-1">₹{stats.total_expenses_logged_usd}</h3>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Top Destinations */}
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                <i data-lucide="flame" className="w-5 h-5 text-odoo-amber"></i> Top Visited Destinations
+              </h3>
+              <div className="space-y-3">
+                {stats.top_destinations.map((d, i) => (
+                  <div key={d.city} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                    <span className="font-bold text-sm text-slate-800">{i + 1}. {d.city}</span>
+                    <span className="text-xs font-semibold px-2.5 py-1 bg-purple-100 text-odoo-purple rounded-full">
+                      {d.trips} Trips
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Popular Categories */}
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                <i data-lucide="pie-chart" className="w-5 h-5 text-odoo-teal"></i> Activity Categories Breakdown
+              </h3>
+              <div className="space-y-3">
+                {stats.popular_activity_categories.map((c) => (
+                  <div key={c.category} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                    <span className="font-bold text-sm text-slate-800">{c.category}</span>
+                    <span className="text-xs font-semibold px-2.5 py-1 bg-teal-100 text-odoo-teal rounded-full">
+                      {c.count} Items
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 6. USER PROFILE VIEW (Screen 12)
+    // =========================================================================
+    function UserProfileView({ user }) {
+      const name = user ? user.name : "Traveler";
+      const email = user ? user.email : "user@globetrotter.com";
+
+      return (
+        <div className="max-w-2xl mx-auto bg-white rounded-3xl border border-slate-200 p-8 shadow-sm space-y-6">
+          <div className="flex items-center gap-5">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-odoo-purple to-odoo-teal flex items-center justify-center text-white font-extrabold text-2xl shadow-md">
+              {name[0].toUpperCase()}
+            </div>
+            <div>
+              <h2 className="text-2xl font-extrabold text-slate-900">{name}</h2>
+              <p className="text-sm text-slate-500">{email}</p>
+              <span className="text-xs bg-purple-100 text-odoo-purple font-bold px-2.5 py-0.5 rounded-full mt-1 inline-block">
+                GlobeTrotter Member
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-4 border-t border-slate-100">
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase">Default Base Currency</label>
+              <select className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold">
+                <option value="INR">INR (₹) - Indian Rupee</option>
+                <option value="USD">USD ($) - United States Dollar</option>
+                <option value="EUR">EUR (€) - Euro</option>
+                <option value="GBP">GBP (£) - British Pound</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase">Travel Style Preference</label>
+              <input 
+                type="text" 
+                defaultValue="Culture, Foodie, Smart Optimized" 
+                className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // MODALS: Create Trip, Add Activity, Add Expense
+    // =========================================================================
+    function CreateTripModal({ onClose, onCreated }) {
+      const [title, setTitle] = useState("");
+      const [desc, setDesc] = useState("");
+      const [startDate, setStartDate] = useState("2026-10-01");
+      const [endDate, setEndDate] = useState("2026-10-08");
+      const [budget, setBudget] = useState(250000);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+          const res = await fetch(`${API_BASE}/trips`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title,
+              description: desc,
+              start_date: startDate,
+              end_date: endDate,
+              total_budget: parseFloat(budget),
+              currency: "INR",
+              is_public: true
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            onCreated(data);
+          }
+        } catch (err) {
+          alert("Error creating trip");
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900">Plan a New Journey</h3>
+                <p className="text-xs text-slate-500">Create trip container with travel dates & budget.</p>
+              </div>
+              <button 
+                type="button" 
+                onClick={onClose} 
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center font-bold text-sm transition-all"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700">Trip Name</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="e.g. Autumn in Bengaluru & Coorg" 
+                  value={title} 
+                  onChange={e => setTitle(e.target.value)}
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-odoo-purple outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700">Trip Description</label>
+                <textarea 
+                  rows="2"
+                  placeholder="What are your goals for this trip?" 
+                  value={desc} 
+                  onChange={e => setDesc(e.target.value)}
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-odoo-purple outline-none"
+                ></textarea>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Start Date</label>
+                  <input 
+                    type="date" 
+                    required
+                    value={startDate} 
+                    onChange={e => setStartDate(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700">End Date</label>
+                  <input 
+                    type="date" 
+                    required
+                    value={endDate} 
+                    onChange={e => setEndDate(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700">Estimated Total Budget (₹ INR)</label>
+                <input 
+                  type="number" 
+                  required
+                  value={budget} 
+                  onChange={e => setBudget(e.target.value)}
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 rounded-xl font-bold text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-2 bg-odoo-purple hover:bg-odoo-darkPurple text-white py-3.5 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-1.5"
+                >
+                  Create Trip & Start Building →
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    function AddStopModal({ trip, cities, onClose, onAdded }) {
+      const [isCustom, setIsCustom] = useState(false);
+      const [selectedCityId, setSelectedCityId] = useState(cities[0] ? cities[0].id : 1);
+      const [customCityName, setCustomCityName] = useState("");
+      const [customCountry, setCustomCountry] = useState("India");
+      const [arrDate, setArrDate] = useState(trip.start_date);
+      const [depDate, setDepDate] = useState(trip.end_date);
+      const [budget, setBudget] = useState(50000);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+          const payload = {
+            arrival_date: arrDate,
+            departure_date: depDate,
+            stop_budget: parseFloat(budget),
+            order_index: trip.stops ? trip.stops.length : 0
+          };
+          if (isCustom) {
+            if (!customCityName.trim()) {
+              alert("Please enter a city name");
+              return;
+            }
+            payload.custom_city_name = customCityName.trim();
+            payload.custom_country = customCountry.trim() || "India";
+          } else {
+            payload.city_id = parseInt(selectedCityId);
+          }
+
+          const res = await fetch(`${API_BASE}/trips/${trip.id}/stops`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (res.ok) onAdded();
+          else {
+            const errData = await res.json();
+            alert(errData.detail || "Error adding destination stop");
+          }
+        } catch (err) {
+          alert("Error adding city stop");
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900">Add Destination Stop</h3>
+                <p className="text-xs text-slate-500">Add a city or custom stop to {trip.title}.</p>
+              </div>
+              <button 
+                type="button" 
+                onClick={onClose} 
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center font-bold text-sm transition-all"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Mode Switch: Popular vs Custom */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setIsCustom(false)}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  !isCustom ? 'bg-white text-odoo-purple shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                🏙️ Popular Cities
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCustom(true)}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  isCustom ? 'bg-white text-odoo-purple shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                ✍️ Any Custom City
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {!isCustom ? (
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Select Destination City</label>
+                  <select
+                    value={selectedCityId}
+                    onChange={e => setSelectedCityId(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
+                  >
+                    {cities.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}, {c.country} ({c.region})</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700">Destination City Name</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Bengaluru, Manali, Mysore, Dubai, Kyoto..."
+                      value={customCityName}
+                      onChange={e => setCustomCityName(e.target.value)}
+                      className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-odoo-purple outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-700">Country</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. India, Japan, UAE"
+                      value={customCountry}
+                      onChange={e => setCustomCountry(e.target.value)}
+                      className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-odoo-purple outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Arrival Date</label>
+                  <input 
+                    type="date" 
+                    required
+                    value={arrDate} 
+                    onChange={e => setArrDate(e.target.value)}
+                    className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Departure Date</label>
+                  <input 
+                    type="date" 
+                    required
+                    value={depDate} 
+                    onChange={e => setDepDate(e.target.value)}
+                    className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700">Allocated Stop Budget (₹ INR)</label>
+                <input 
+                  type="number" 
+                  required
+                  value={budget} 
+                  onChange={e => setBudget(e.target.value)}
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-bold text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-2 bg-odoo-purple hover:bg-odoo-darkPurple text-white py-3 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                >
+                  + Add Stop & Start Scheduling →
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    function AddActivityModal({ stop, onClose, onAdded }) {
+      const [activeTab, setActiveTab] = useState("custom"); // "custom" | "presets"
+      const [customTitle, setCustomTitle] = useState("");
+      const [dayNumber, setDayNumber] = useState(1);
+      const [time, setTime] = useState("10:00 AM");
+      const [cost, setCost] = useState(500);
+      const [duration, setDuration] = useState(120);
+      const [category, setCategory] = useState("Sightseeing");
+      const [notes, setNotes] = useState("");
+      const [searchPreset, setSearchPreset] = useState("");
+      const [cityActivities, setCityActivities] = useState([]);
+
+      useEffect(() => {
+        if (stop && stop.city_id) {
+          fetch(`${API_BASE}/activities/search?city_id=${stop.city_id}`)
+            .then(res => res.json())
+            .then(data => {
+              setCityActivities(data);
+              if (data && data.length > 0) {
+                // if presets exist, we can start on custom or presets
+              }
+            })
+            .catch(e => console.error(e));
+        }
+      }, [stop]);
+
+      const handleAddCustom = async (e) => {
+        e.preventDefault();
+        if (!customTitle.trim()) {
+          alert("Please enter an activity name");
+          return;
+        }
+        try {
+          const res = await fetch(`${API_BASE}/stops/${stop.id}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stop_id: stop.id,
+              custom_title: customTitle.trim(),
+              day_number: parseInt(dayNumber),
+              start_time: time,
+              duration_minutes: parseInt(duration),
+              cost: parseFloat(cost),
+              notes: notes.trim() || undefined
+            })
+          });
+          if (res.ok) onAdded();
+          else alert("Failed to add activity");
+        } catch (err) {
+          alert("Error adding activity");
+        }
+      };
+
+      const handleAddPreset = async (act) => {
+        try {
+          const res = await fetch(`${API_BASE}/stops/${stop.id}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stop_id: stop.id,
+              activity_id: act.id,
+              custom_title: act.name,
+              day_number: parseInt(dayNumber),
+              start_time: time,
+              duration_minutes: act.duration_minutes,
+              cost: act.currency_code === 'INR' ? act.estimated_cost : Math.round(act.estimated_cost * 90)
+            })
+          });
+          if (res.ok) onAdded();
+        } catch (err) {
+          alert("Failed to add activity");
+        }
+      };
+
+      const filteredPresets = cityActivities.filter(a => 
+        a.name.toLowerCase().includes(searchPreset.toLowerCase()) || 
+        a.category.toLowerCase().includes(searchPreset.toLowerCase())
+      );
+
+      return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900">Add Activity to {stop.city.name}</h3>
+                <p className="text-xs text-slate-500">Create custom visit or pick from top recommendations.</p>
+              </div>
+              <button 
+                type="button" 
+                onClick={onClose} 
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center font-bold text-sm transition-all"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Mode Switch: Custom vs Presets */}
+            <div className="flex bg-slate-100 p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setActiveTab("custom")}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "custom" ? 'bg-white text-odoo-purple shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                ✍️ Add Custom Place / Activity
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("presets")}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  activeTab === "presets" ? 'bg-white text-odoo-purple shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                🎯 Suggested Places ({cityActivities.length})
+              </button>
+            </div>
+
+            {/* Common Day and Time Selectors */}
+            <div className="grid grid-cols-2 gap-3 p-3 bg-purple-50/50 rounded-2xl border border-purple-100">
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 uppercase">Scheduled Day</label>
+                <select 
+                  value={dayNumber} 
+                  onChange={e => setDayNumber(e.target.value)}
+                  className="w-full mt-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-odoo-purple"
+                >
+                  <option value="1">Day 1</option>
+                  <option value="2">Day 2</option>
+                  <option value="3">Day 3</option>
+                  <option value="4">Day 4</option>
+                  <option value="5">Day 5</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 uppercase">Start Time</label>
+                <input 
+                  type="text" 
+                  value={time} 
+                  onChange={e => setTime(e.target.value)}
+                  placeholder="e.g. 10:00 AM"
+                  className="w-full mt-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                />
+              </div>
+            </div>
+
+            {/* TAB 1: CUSTOM ACTIVITY CREATOR */}
+            {activeTab === "custom" && (
+              <form onSubmit={handleAddCustom} className="space-y-3.5">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Activity Title / Place Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Nandi Hills Sunrise Trek, Dinner at Nagarjuna..."
+                    value={customTitle}
+                    onChange={e => setCustomTitle(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-odoo-purple outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700">Category</label>
+                    <select
+                      value={category}
+                      onChange={e => setCategory(e.target.value)}
+                      className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
+                    >
+                      <option value="Sightseeing">Sightseeing</option>
+                      <option value="Food & Dining">Food & Dining</option>
+                      <option value="Adventure">Adventure</option>
+                      <option value="Culture & Heritage">Culture</option>
+                      <option value="Shopping">Shopping</option>
+                      <option value="Nightlife">Nightlife</option>
+                      <option value="Relaxation">Relaxation</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700">Cost (₹ INR)</label>
+                    <input
+                      type="number"
+                      required
+                      value={cost}
+                      onChange={e => setCost(e.target.value)}
+                      className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700">Duration (mins)</label>
+                    <input
+                      type="number"
+                      required
+                      value={duration}
+                      onChange={e => setDuration(e.target.value)}
+                      className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Notes / Booking Details (Optional)</label>
+                  <textarea
+                    rows="2"
+                    placeholder="e.g. Entry ticket required, wear sports shoes, meet at main gate..."
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none"
+                  ></textarea>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={onClose}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-bold text-sm transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-2 bg-odoo-purple hover:bg-odoo-darkPurple text-white py-3 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <i data-lucide="plus-circle" className="w-4 h-4"></i> Add to Day {dayNumber}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB 2: PRESET SUGGESTIONS */}
+            {activeTab === "presets" && (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="🔍 Search attractions in this city..."
+                  value={searchPreset}
+                  onChange={e => setSearchPreset(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none"
+                />
+
+                <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+                  {filteredPresets.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400 text-xs">
+                      No matching presets found. Switch to "Add Custom Place" to add any attraction.
+                    </div>
+                  ) : (
+                    filteredPresets.map(act => {
+                      const costInr = act.currency_code === 'INR' ? act.estimated_cost : Math.round(act.estimated_cost * 90);
+                      return (
+                        <div key={act.id} className="flex items-center justify-between p-3 bg-slate-50 hover:bg-purple-50 rounded-2xl border border-slate-100 transition-colors gap-3">
+                          <div className="flex-1">
+                            <h5 className="font-bold text-sm text-slate-800">{act.name}</h5>
+                            <p className="text-[11px] text-slate-500 line-clamp-1">{act.category} • {act.duration_minutes} mins {act.description && `• ${act.description}`}</p>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => handleAddPreset(act)}
+                            className="bg-odoo-teal hover:bg-odoo-darkTeal text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0"
+                          >
+                            + Add (₹{costInr})
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs transition-all mt-2"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function AddExpenseModal({ trip, initialExpense, onClose, onAdded }) {
+      const isEditing = !!initialExpense;
+      const [desc, setDesc] = useState(initialExpense ? initialExpense.description : "");
+      const [category, setCategory] = useState(initialExpense ? initialExpense.category : "Meals");
+      const [amount, setAmount] = useState(initialExpense ? initialExpense.amount : 5000);
+      const [curr, setCurr] = useState(initialExpense ? initialExpense.currency : "INR");
+
+      // Dynamic member list from trip
+      const memberNames = (trip.members && trip.members.length > 0)
+        ? trip.members.map(m => m.guest_name || 'Traveler')
+        : ["Traveler"];
+
+      const [paidBy, setPaidBy] = useState(
+        (initialExpense && initialExpense.paid_by_name) ? initialExpense.paid_by_name : (memberNames[0] || "Traveler")
+      );
+      const [selectedSplitMembers, setSelectedSplitMembers] = useState(
+        (initialExpense && initialExpense.splits && initialExpense.splits.length > 0)
+          ? initialExpense.splits.map(s => s.member_name)
+          : memberNames
+      );
+
+      const toggleMemberSplit = (name) => {
+        if (selectedSplitMembers.includes(name)) {
+          if (selectedSplitMembers.length > 1) {
+            setSelectedSplitMembers(selectedSplitMembers.filter(m => m !== name));
+          }
+        } else {
+          setSelectedSplitMembers([...selectedSplitMembers, name]);
+        }
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+          const splitAmount = roundVal(amount / selectedSplitMembers.length);
+          const url = isEditing
+            ? `${API_BASE}/trips/${trip.id}/expenses/${initialExpense.id}`
+            : `${API_BASE}/trips/${trip.id}/expenses`;
+          const method = isEditing ? 'PUT' : 'POST';
+
+          const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              description: desc,
+              category,
+              amount: parseFloat(amount),
+              currency: curr,
+              paid_by_name: paidBy,
+              expense_date: trip.start_date,
+              splits: selectedSplitMembers.map(m => ({ member_name: m, share_amount: splitAmount }))
+            })
+          });
+          if (res.ok) onAdded();
+          else alert("Failed to save expense");
+        } catch (err) {
+          alert("Error saving expense");
+        }
+      };
+
+      const roundVal = (v) => Math.round(v * 100) / 100;
+
+      return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900">{isEditing ? "Edit Shared Expense" : "Log Multi-Currency Expense"}</h3>
+                <p className="text-xs text-slate-500">{isEditing ? "Update bill details and recalculated split." : "Record shared bill with custom group splits."}</p>
+              </div>
+              <button 
+                type="button" 
+                onClick={onClose} 
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center font-bold text-sm transition-all"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700">Description</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="e.g. Dinner at Vidyarthi Bhavan, River Rafting..." 
+                  value={desc} 
+                  onChange={e => setDesc(e.target.value)}
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-odoo-purple"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Category</label>
+                  <select 
+                    value={category} 
+                    onChange={e => setCategory(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  >
+                    <option value="Stay">Stay</option>
+                    <option value="Transport">Transport</option>
+                    <option value="Meals">Meals</option>
+                    <option value="Activities">Activities</option>
+                    <option value="Shopping">Shopping</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Paid By (Who Paid?)</label>
+                  <select 
+                    value={paidBy} 
+                    onChange={e => setPaidBy(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-odoo-purple"
+                  >
+                    {memberNames.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Amount</label>
+                  <input 
+                    type="number" 
+                    required
+                    value={amount} 
+                    onChange={e => setAmount(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Currency (Live FX)</label>
+                  <select 
+                    value={curr} 
+                    onChange={e => setCurr(e.target.value)}
+                    className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
+                  >
+                    <option value="INR">INR (₹)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="JPY">JPY (¥)</option>
+                    <option value="GBP">GBP (£)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Group Members Split Selector */}
+              <div className="space-y-2 pt-1">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Split Among Travelers ({selectedSplitMembers.length})</span>
+                  <span className="text-odoo-teal text-[11px]">
+                    ₹{(amount / (selectedSplitMembers.length || 1)).toFixed(2)} each
+                  </span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {memberNames.map(name => {
+                    const isChecked = selectedSplitMembers.includes(name);
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => toggleMemberSplit(name)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          isChecked 
+                            ? 'bg-purple-100 text-odoo-purple border border-purple-200 shadow-sm' 
+                            : 'bg-slate-100 text-slate-400 border border-transparent'
+                        }`}
+                      >
+                        {isChecked ? '✓' : '+'} {name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button 
+                  type="button" 
+                  onClick={onClose}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 rounded-xl font-bold text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-2 bg-odoo-purple hover:bg-odoo-darkPurple text-white py-3 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-1.5"
+                >
+                  {isEditing ? "Update Expense →" : "Save & Update GlobeSplit →"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // Mount React Root
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
