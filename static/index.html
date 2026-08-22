@@ -145,7 +145,6 @@
       };
 
       const loadTripDetail = async (id) => {
-        setLoading(true);
         try {
           const res = await fetch(`${API_BASE}/trips/${id}`);
           if (res.ok) {
@@ -153,12 +152,10 @@
             setTripData(data);
             setSelectedTripId(id);
             setCurrentView('trip-detail');
-            loadGlobeSplit(id);
+            await loadGlobeSplit(id);
           }
         } catch (e) {
           showToast("Failed to load trip details", "error");
-        } finally {
-          setLoading(false);
         }
       };
 
@@ -1385,16 +1382,13 @@
                 </div>
               </div>
 
-              {/* WOW Factor 1: GlobeSplit Debt Settlement Matrix */}
+              {/* GlobeSplit Debt Settlement Matrix */}
               {globeSplitReport && (
                 <div className="bg-gradient-to-r from-slate-900 via-odoo-darkPurple to-slate-900 rounded-3xl p-8 text-white shadow-xl space-y-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                      <span className="px-3 py-1 bg-odoo-amber text-slate-900 font-extrabold text-xs rounded-full uppercase">
-                        WOW Factor: Odoo GlobeSplit
-                      </span>
-                      <h3 className="text-2xl font-extrabold mt-2">Group Debt Settlement Matrix</h3>
-                      <p className="text-xs text-slate-300">
+                      <h3 className="text-2xl font-extrabold">Group Debt Settlement Matrix</h3>
+                      <p className="text-xs text-slate-300 mt-1">
                         Min-Cash-Flow graph algorithm calculates the exact minimum transactions to settle all member debts.
                       </p>
                     </div>

@@ -201,6 +201,7 @@ def create_trip(
 
 @app.get("/api/trips/{trip_id}", response_model=schemas.TripDetailOut)
 def get_trip_detail(trip_id: int, db: Session = Depends(get_db)):
+    db.expire_all()
     trip = db.query(models.Trip).filter(models.Trip.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
