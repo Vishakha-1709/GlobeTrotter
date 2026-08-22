@@ -1671,11 +1671,12 @@
     // MODALS: Create Trip, Add Activity, Add Expense
     // =========================================================================
     function CreateTripModal({ onClose, onCreated }) {
+      const todayStr = new Date().toISOString().split('T')[0];
       const [title, setTitle] = useState("");
       const [desc, setDesc] = useState("");
-      const [startDate, setStartDate] = useState("2026-10-01");
-      const [endDate, setEndDate] = useState("2026-10-08");
-      const [budget, setBudget] = useState(250000);
+      const [startDate, setStartDate] = useState(todayStr);
+      const [endDate, setEndDate] = useState(todayStr);
+      const [budget, setBudget] = useState(50000);
 
       const handleSubmit = async (e) => {
         e.preventDefault();
