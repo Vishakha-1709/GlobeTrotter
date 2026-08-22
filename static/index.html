@@ -331,6 +331,7 @@
               <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 {currentView === 'dashboard' && (
                   <DashboardView 
+                    user={currentUser}
                     userTrips={userTrips} 
                     cities={cities} 
                     onSelectTrip={loadTripDetail}
@@ -673,8 +674,10 @@
     // =========================================================================
     // 1. DASHBOARD VIEW (Screen 2)
     // =========================================================================
-    function DashboardView({ userTrips, cities, onSelectTrip, onPlanTrip, onExplore }) {
+    function DashboardView({ user, userTrips, cities, onSelectTrip, onPlanTrip, onExplore }) {
       const recentTrip = userTrips[0];
+      const userName = (user && user.name) ? user.name : "Vishakha";
+
       return (
         <div className="space-y-8">
           {/* Welcome Banner */}
@@ -684,7 +687,7 @@
                 Personalized Travel Intelligence
               </span>
               <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight">
-                Where to next, Alex? Dream, Design & Optimize.
+                Where to next, {userName}? Dream, Design & Optimize.
               </h1>
               <p className="text-slate-200 text-sm sm:text-base">
                 Build multi-city itineraries, eliminate travel crisscrossing with AI route sequencing, and split expenses effortlessly.
