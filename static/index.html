@@ -517,16 +517,6 @@
         }
       };
 
-      const handleDemoLogin = () => {
-        onLoginSuccess({
-          id: 1,
-          name: "Traveler",
-          email: "traveler@globetrotter.com",
-          base_currency: "INR",
-          avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
-        });
-      };
-
       return (
         <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-odoo-darkPurple to-slate-900 relative overflow-hidden">
           {/* Ambient Glows */}
@@ -647,25 +637,11 @@
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-odoo-purple hover:bg-odoo-darkPurple text-white py-3.5 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                className="w-full bg-odoo-purple hover:bg-odoo-darkPurple text-white py-3.5 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {loading ? "Processing..." : isLogin ? "Log In to My Trips →" : "Create Account & Start Exploring →"}
               </button>
             </form>
-
-            {/* 1-Click Demo Evaluation Button */}
-            <div className="pt-3 border-t border-slate-100 space-y-2 text-center">
-              <button
-                type="button"
-                onClick={handleDemoLogin}
-                className="w-full bg-teal-50 hover:bg-teal-100 text-odoo-teal border border-teal-200 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5"
-              >
-                <i data-lucide="zap" className="w-4 h-4"></i> ⚡ 1-Click Demo Access (Alex River)
-              </button>
-              <p className="text-[11px] text-slate-400">
-                Odoo Hackathon Evaluation Mode
-              </p>
-            </div>
           </div>
         </div>
       );
