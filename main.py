@@ -137,10 +137,13 @@ def search_activities(
 # ==============================================================================
 @app.get("/api/trips", response_model=List[schemas.TripSummaryOut])
 def list_user_trips(
+    user_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    trips = db.query(models.Trip).filter(models.Trip.user_id == current_user.id).order_by(models.Trip.start_date.desc()).all()
+    target_user_id = user_id if user_id is not None else current_user.id
+    db.expire_all()
+    trips = db.query(models.Trip).filter(models.Trip.user_id == target_user_id).order_by(models.Trip.start_date.desc()).all()
     results = []
     for t in trips:
         spent = sum(e.converted_amount for e in t.expenses)
@@ -166,12 +169,15 @@ def list_user_trips(
 @app.post("/api/trips", response_model=schemas.TripDetailOut, status_code=status.HTTP_201_CREATED)
 def create_trip(
     trip_in: schemas.TripCreate,
+    user_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    target_user_id = user_id if user_id is not None else current_user.id
+    target_user = db.query(models.User).filter(models.User.id == target_user_id).first() or current_user
     slug = f"trip-{uuid.uuid4().hex[:8]}"
     trip = models.Trip(
-        user_id=current_user.id,
+        user_id=target_user_id,
         title=trip_in.title,
         description=trip_in.description,
         start_date=trip_in.start_date,
@@ -189,8 +195,8 @@ def create_trip(
     # Add creator as primary member
     member = models.TripMember(
         trip_id=trip.id,
-        user_id=current_user.id,
-        guest_name=current_user.name or "Traveler",
+        user_id=target_user_id,
+        guest_name=target_user.name or "Traveler",
         role="traveler"
     )
     db.add(member)

@@ -60,7 +60,14 @@
 
     function App() {
       // User authentication state (Screen 1)
-      const [currentUser, setCurrentUser] = useState(null); // null = show Screen 1 Login/Signup
+      const [currentUser, setCurrentUser] = useState(() => {
+        try {
+          return JSON.parse(localStorage.getItem("gt_user") || "null");
+        } catch (e) {
+          return null;
+        }
+      });
+      const [authToken, setAuthToken] = useState(() => localStorage.getItem("gt_auth_token") || "");
       
       // Navigation state: 'dashboard' | 'trips' | 'trip-detail' | 'explore' | 'admin' | 'profile'
       const [currentView, setCurrentView] = useState('dashboard');
@@ -95,20 +102,33 @@
 
       // Load initial data
       useEffect(() => {
-        if (currentUser) {
-          fetchUserTrips();
+        if (currentUser && currentUser.id) {
+          fetchUserTrips(currentUser.id);
           fetchCities();
+        } else {
+          setUserTrips([]);
         }
       }, [currentUser]);
 
-      const handleLoginSuccess = (user) => {
+      const handleLoginSuccess = (user, token) => {
         setCurrentUser(user);
+        if (token) {
+          setAuthToken(token);
+          localStorage.setItem("gt_auth_token", token);
+        }
+        localStorage.setItem("gt_user", JSON.stringify(user));
         setCurrentView('dashboard');
-        showToast(`Welcome back, ${user.name}!`);
+        fetchUserTrips(user.id);
+        showToast(`Welcome, ${user.name}!`);
       };
 
       const handleLogout = () => {
         setCurrentUser(null);
+        setAuthToken("");
+        localStorage.removeItem("gt_auth_token");
+        localStorage.removeItem("gt_user");
+        setUserTrips([]);
+        setTripData(null);
         showToast("Logged out successfully.");
       };
 
@@ -119,9 +139,14 @@
         }
       }, [currentView, tripData, activeTripTab, userTrips, cities]);
 
-      const fetchUserTrips = async () => {
+      const fetchUserTrips = async (uid) => {
+        const userId = uid || (currentUser && currentUser.id);
+        if (!userId) {
+          setUserTrips([]);
+          return;
+        }
         try {
-          const res = await fetch(`${API_BASE}/trips`);
+          const res = await fetch(`${API_BASE}/trips?user_id=${userId}`);
           if (res.ok) {
             const data = await res.json();
             setUserTrips(data);
@@ -400,10 +425,12 @@
           {/* Create Trip Modal */}
           {showCreateModal && (
             <CreateTripModal 
+              currentUser={currentUser}
+              authToken={authToken}
               onClose={() => setShowCreateModal(false)}
               onCreated={(newTrip) => {
                 setShowCreateModal(false);
-                fetchUserTrips();
+                fetchUserTrips(currentUser ? currentUser.id : null);
                 loadTripDetail(newTrip.id);
                 showToast("🎉 Trip created successfully!");
               }}
@@ -503,7 +530,7 @@
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || "Invalid email or password");
-            onLoginSuccess(data.user);
+            onLoginSuccess(data.user, data.access_token);
           } else {
             const res = await fetch(`${API_BASE}/auth/signup`, {
               method: 'POST',
@@ -512,7 +539,7 @@
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.detail || "Registration failed");
-            onLoginSuccess(data.user);
+            onLoginSuccess(data.user, data.access_token);
           }
         } catch (err) {
           setError(err.message);
@@ -1623,7 +1650,7 @@
     // =========================================================================
     // MODALS: Create Trip, Add Activity, Add Expense
     // =========================================================================
-    function CreateTripModal({ onClose, onCreated }) {
+    function CreateTripModal({ currentUser, authToken, onClose, onCreated }) {
       const todayStr = new Date().toISOString().split('T')[0];
       const [title, setTitle] = useState("");
       const [desc, setDesc] = useState("");
@@ -1634,16 +1661,20 @@
       const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-          const res = await fetch(`${API_BASE}/trips`, {
+          const userIdParam = currentUser ? `?user_id=${currentUser.id}` : '';
+          const res = await fetch(`${API_BASE}/trips${userIdParam}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+            },
             body: JSON.stringify({
               title,
               description: desc,
               start_date: startDate,
               end_date: endDate,
               total_budget: parseFloat(budget) || 0,
-              currency: "INR",
+              currency: (currentUser && currentUser.base_currency) || "INR",
               is_public: true
             })
           });
