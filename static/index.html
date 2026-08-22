@@ -2323,7 +2323,7 @@
       const isEditing = !!initialExpense;
       const [desc, setDesc] = useState(initialExpense ? initialExpense.description : "");
       const [category, setCategory] = useState(initialExpense ? initialExpense.category : "Meals");
-      const [amount, setAmount] = useState(initialExpense ? initialExpense.amount : 5000);
+      const [amount, setAmount] = useState(initialExpense ? initialExpense.amount : 0);
       const [curr, setCurr] = useState(initialExpense ? initialExpense.currency : "INR");
 
       // Dynamic member list from trip
@@ -2352,8 +2352,9 @@
 
       const handleSubmit = async (e) => {
         e.preventDefault();
+        const parsedAmount = parseFloat(amount) || 0;
         try {
-          const splitAmount = roundVal(amount / selectedSplitMembers.length);
+          const splitAmount = roundVal(parsedAmount / (selectedSplitMembers.length || 1));
           const url = isEditing
             ? `${API_BASE}/trips/${trip.id}/expenses/${initialExpense.id}`
             : `${API_BASE}/trips/${trip.id}/expenses`;
@@ -2365,7 +2366,7 @@
             body: JSON.stringify({
               description: desc,
               category,
-              amount: parseFloat(amount),
+              amount: parsedAmount,
               currency: curr,
               paid_by_name: paidBy,
               expense_date: trip.start_date,
@@ -2447,6 +2448,8 @@
                   <input 
                     type="number" 
                     required
+                    min="0"
+                    placeholder="0"
                     value={amount} 
                     onChange={e => setAmount(e.target.value)}
                     className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
@@ -2476,7 +2479,7 @@
                   </label>
                   <div className="flex items-center gap-2">
                     <span className="text-odoo-teal text-[11px] font-bold">
-                      ₹{(amount / (selectedSplitMembers.length || 1)).toFixed(2)} each
+                      ₹{(((parseFloat(amount) || 0)) / (selectedSplitMembers.length || 1)).toFixed(2)} each
                     </span>
                     {onNavigateToMembers && (
                       <button
