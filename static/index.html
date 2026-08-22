@@ -2028,11 +2028,20 @@
     }
 
     function AddActivityModal({ stop, onClose, onAdded }) {
+      const timeSlots = [
+        "06:00 AM", "06:30 AM", "07:00 AM", "07:30 AM", "08:00 AM", "08:30 AM",
+        "09:00 AM", "09:30 AM", "10:00 AM", "10:30 AM", "11:00 AM", "11:30 AM",
+        "12:00 PM", "12:30 PM", "01:00 PM", "01:30 PM", "02:00 PM", "02:30 PM",
+        "03:00 PM", "03:30 PM", "04:00 PM", "04:30 PM", "05:00 PM", "05:30 PM",
+        "06:00 PM", "06:30 PM", "07:00 PM", "07:30 PM", "08:00 PM", "08:30 PM",
+        "09:00 PM", "09:30 PM", "10:00 PM", "10:30 PM", "11:00 PM"
+      ];
+
       const [activeTab, setActiveTab] = useState("custom"); // "custom" | "presets"
       const [customTitle, setCustomTitle] = useState("");
       const [dayNumber, setDayNumber] = useState(1);
       const [time, setTime] = useState("10:00 AM");
-      const [cost, setCost] = useState(500);
+      const [cost, setCost] = useState("");
       const [duration, setDuration] = useState(120);
       const [category, setCategory] = useState("Sightseeing");
       const [notes, setNotes] = useState("");
@@ -2069,7 +2078,7 @@
               day_number: parseInt(dayNumber),
               start_time: time,
               duration_minutes: parseInt(duration),
-              cost: parseFloat(cost),
+              cost: parseFloat(cost) || 0,
               notes: notes.trim() || undefined
             })
           });
@@ -2108,16 +2117,16 @@
 
       return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-extrabold text-slate-900">Add Activity to {stop.city.name}</h3>
+                <h3 className="text-xl font-extrabold text-slate-900">Add Activity to {stop.city ? stop.city.name : "Stop"}</h3>
                 <p className="text-xs text-slate-500">Create custom visit or pick from top recommendations.</p>
               </div>
               <button 
                 type="button" 
                 onClick={onClose} 
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center font-bold text-sm transition-all"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center font-bold text-sm transition-all cursor-pointer"
                 title="Close"
               >
                 ✕
@@ -2153,7 +2162,7 @@
                 <select 
                   value={dayNumber} 
                   onChange={e => setDayNumber(e.target.value)}
-                  className="w-full mt-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-odoo-purple"
+                  className="w-full mt-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-odoo-purple outline-none focus:ring-2 focus:ring-odoo-purple"
                 >
                   <option value="1">Day 1</option>
                   <option value="2">Day 2</option>
@@ -2164,13 +2173,15 @@
               </div>
               <div>
                 <label className="text-[11px] font-bold text-slate-600 uppercase">Start Time</label>
-                <input 
-                  type="text" 
+                <select 
                   value={time} 
                   onChange={e => setTime(e.target.value)}
-                  placeholder="e.g. 10:00 AM"
-                  className="w-full mt-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
-                />
+                  className="w-full mt-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-odoo-purple cursor-pointer outline-none focus:ring-2 focus:ring-odoo-purple"
+                >
+                  {timeSlots.map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -2195,7 +2206,7 @@
                     <select
                       value={category}
                       onChange={e => setCategory(e.target.value)}
-                      className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
+                      className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-odoo-purple"
                     >
                       <option value="Sightseeing">Sightseeing</option>
                       <option value="Food & Dining">Food & Dining</option>
@@ -2209,10 +2220,11 @@
 
                   <div>
                     <label className="text-xs font-bold text-slate-700">Cost (₹ INR)</label>
-                    <input
-                      type="number"
-                      required
-                      value={cost}
+                    <input 
+                      type="number" 
+                      min="0"
+                      placeholder="Enter amount"
+                      value={cost} 
                       onChange={e => setCost(e.target.value)}
                       className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
                     />
